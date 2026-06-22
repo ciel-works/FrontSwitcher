@@ -1,0 +1,19 @@
+# ビルド成果物
+bin/
+obj/
+
+# 配布物（リリースに添付するもの。リポジトリには含めない）
+installer/*.exe
+*.zip
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+
+# OS
+Thumbs.db
+desktop.ini
+
+# アプリのログ（万一プロジェクト内に出力された場合）
+log.txt

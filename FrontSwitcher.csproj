@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!-- WinForms の NotifyIcon(タスクトレイ) を使うため WinForms も有効化 -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>checkmark.ico</ApplicationIcon>
+    <AssemblyName>FrontSwitcher</AssemblyName>
+    <RootNamespace>FrontSwitcher</RootNamespace>
+    <Version>1.0.0</Version>
+    <!-- 単一ファイル発行を見据えた設定（任意） -->
+    <SatelliteResourceLanguages>ja;en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+</Project>

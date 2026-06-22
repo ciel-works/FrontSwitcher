@@ -1,0 +1,179 @@
+<Window x:Class="FrontSwitcher.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="FrontSwitcher 設定"
+        Width="560" Height="600"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        FontFamily="Yu Gothic UI" FontSize="13"
+        Background="#FAFAFA">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TabControl Grid.Row="0" Padding="6">
+
+            <!-- ===== 基本 ===== -->
+            <TabItem Header="基本">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="6">
+                        <GroupBox Header="ショートカットキー" Padding="10" Margin="0,4,0,12">
+                            <StackPanel>
+                                <TextBlock Text="入力欄をクリックして、登録したいキーの組み合わせを押してください（修飾キー＋通常キー）。"
+                                           TextWrapping="Wrap" Foreground="#555" Margin="0,0,0,6"/>
+                                <TextBox x:Name="HotKeyBox" IsReadOnly="True" Height="32"
+                                         VerticalContentAlignment="Center" Padding="6,0"
+                                         Text="(未設定)" Cursor="Hand"
+                                         PreviewKeyDown="HotKeyBox_PreviewKeyDown"
+                                         GotFocus="HotKeyBox_GotFocus" LostFocus="HotKeyBox_LostFocus"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="オプション" Padding="10">
+                            <StackPanel>
+                                <CheckBox x:Name="MinimizeCheck" Content="アクティブなウインドウを最小化する（既定: ON）"
+                                          Margin="0,2" Checked="MinimizeCheck_Changed" Unchecked="MinimizeCheck_Changed"
+                                          ToolTip="OFF にすると、ホットキーを押してもアクティブ（前面）のウインドウは最小化しません。&#x0a;「一緒に最小化するアプリ」「タブを閉じる」「最前面化」などの動作はそのまま実行されます。"/>
+                                <CheckBox x:Name="HideTaskbarCheck" Content="最小化したウインドウをタスクバーから隠す"
+                                          Margin="20,2,0,0"
+                                          ToolTip="ONにすると、最小化した作業中ウインドウをタスクバーから消します。&#x0a;Windows 11 では Alt+Tab からも消えるため、戻すときは『同じホットキーをもう一度押す』か、トレイメニューの『隠したウインドウを戻す』を使ってください（タスクバーのボタンも復活します）。"/>
+                                <TextBlock Text="※ Windows 11 では Alt+Tab からも消えます。戻すのはホットキー再押下、またはトレイの「隠したウインドウを戻す」。"
+                                           Foreground="#888" FontSize="11.5" TextWrapping="Wrap" Margin="40,0,0,4"/>
+                                <CheckBox x:Name="StartupCheck" Content="Windows 起動時に自動で常駐する"
+                                          Margin="0,2"/>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ===== 最前面化 ===== -->
+            <TabItem Header="最前面化">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="6">
+                        <CheckBox x:Name="BringToFrontCheck"
+                                  Content="ホットキーで対象アプリを最前面に出す"
+                                  Margin="2,6,0,2" FontWeight="SemiBold"
+                                  Checked="BringToFrontCheck_Changed" Unchecked="BringToFrontCheck_Changed"
+                                  ToolTip="OFF のときはホットキーで「前面ウインドウを最小化」するだけです（画面の動きが小さい）。&#x0a;ON にすると、最小化に加えて下で指定した対象アプリを最前面に表示します。"/>
+                        <TextBlock Text="OFF のときは「最小化のみ」。対象アプリの指定は不要です。"
+                                   Foreground="#888" FontSize="11.5" TextWrapping="Wrap" Margin="24,0,0,10"/>
+
+                        <GroupBox x:Name="TargetGroup" Header="前面に出す対象アプリ" Padding="10">
+                            <StackPanel x:Name="TargetPanel">
+                                <TextBlock Text="プロセス名（拡張子なし。例: notepad, chrome, EXCEL）"
+                                           Foreground="#555" Margin="0,0,0,4"/>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="ProcessNameBox" Grid.Column="0" Height="30"
+                                             VerticalContentAlignment="Center" Padding="6,0"/>
+                                    <Button x:Name="CaptureButton" Grid.Column="1" Content="前面ウインドウから取得"
+                                            Margin="8,0,0,0" Padding="10,0" Height="30"
+                                            Click="CaptureButton_Click"
+                                            ToolTip="このボタンを押すと数秒待機します。その間に対象アプリを前面にしてください。"/>
+                                </Grid>
+
+                                <TextBlock Text="実行ファイル(.exe) のパス　※未起動のときに自動起動するために使用"
+                                           Foreground="#555" Margin="0,0,0,4"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="ExePathBox" Grid.Column="0" Height="30"
+                                             VerticalContentAlignment="Center" Padding="6,0"/>
+                                    <Button x:Name="BrowseButton" Grid.Column="1" Content="参照..."
+                                            Margin="8,0,0,0" Padding="14,0" Height="30"
+                                            Click="BrowseButton_Click"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ===== 一緒に最小化 ===== -->
+            <TabItem Header="一緒に最小化">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="6">
+                        <TextBlock Text="ここに登録したアプリが開いていれば、ホットキー時に前面ウインドウと一緒に最小化します（再押下でまとめて復元）。最大20件。"
+                                   Foreground="#555" TextWrapping="Wrap" Margin="2,6,0,6"/>
+                        <ListBox x:Name="MinimizeListBox" Height="150" Margin="0,0,0,6"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="AddProcessBox" Grid.Column="0" Height="30"
+                                     VerticalContentAlignment="Center" Padding="6,0"
+                                     ToolTip="プロセス名（拡張子なし。例: chrome, EXCEL, OUTLOOK）"/>
+                            <Button x:Name="AddProcessButton" Grid.Column="1" Content="追加"
+                                    Margin="6,0,0,0" Padding="12,0" Height="30" Click="AddProcessButton_Click"/>
+                            <Button x:Name="CaptureAddButton" Grid.Column="2" Content="前面から取得"
+                                    Margin="6,0,0,0" Padding="10,0" Height="30" Click="CaptureAddButton_Click"
+                                    ToolTip="押すと数秒待機します。その間に登録したいアプリを前面にしてください。"/>
+                            <Button x:Name="RemoveProcessButton" Grid.Column="3" Content="選択を削除"
+                                    Margin="6,0,0,0" Padding="10,0" Height="30" Click="RemoveProcessButton_Click"/>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ===== タブを閉じる ===== -->
+            <TabItem Header="タブを閉じる">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="6">
+                        <TextBlock TextWrapping="Wrap" Foreground="#555" Margin="2,6,0,6">
+                            <Run Text="Chrome / Edge で、タブのタイトルが下の正規表現にマッチしたら、ホットキー時に一緒に閉じます。最大20件。"/>
+                            <LineBreak/>
+                            <Run Text="例: " /><Run Text="楽天証券" FontWeight="SemiBold"/><Run Text="（このどれかを含むタイトルのタブを閉じる）"/>
+                        </TextBlock>
+                        <Border Background="#FFF4E5" BorderBrush="#F0C98A" BorderThickness="1" CornerRadius="4"
+                                Padding="8" Margin="0,0,0,8">
+                            <TextBlock TextWrapping="Wrap" Foreground="#7a5a14" FontSize="12"
+                                       Text="⚠ 閉じたタブは元に戻せません（Ctrl+Shift+T で手動復元は可能）。正規表現は広すぎないようご注意ください。"/>
+                        </Border>
+                        <ListBox x:Name="CloseTabListBox" Height="120" Margin="0,0,0,6"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="AddCloseBox" Grid.Column="0" Height="30"
+                                     VerticalContentAlignment="Center" Padding="6,0"
+                                     ToolTip="タブのタイトルにマッチさせる正規表現（例: 楽天証券）"/>
+                            <Button x:Name="AddCloseButton" Grid.Column="1" Content="追加"
+                                    Margin="6,0,0,0" Padding="12,0" Height="30" Click="AddCloseButton_Click"/>
+                            <Button x:Name="RemoveCloseButton" Grid.Column="2" Content="選択を削除"
+                                    Margin="6,0,0,0" Padding="10,0" Height="30" Click="RemoveCloseButton_Click"/>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <!-- 説明 -->
+        <Border Grid.Row="1" Background="#EEF4FF" CornerRadius="4" Padding="10" Margin="0,10,0,10">
+            <TextBlock TextWrapping="Wrap" Foreground="#334" FontSize="12">
+                <Run Text="基本: ホットキーで前面ウインドウを最小化（再押下で復元）。各タブで「最前面化」「一緒に最小化」「タブを閉じる」を追加できます。"/>
+            </TextBlock>
+        </Border>
+
+        <!-- ボタン -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="SaveButton" Content="保存" Width="100" Height="34"
+                    Margin="0,0,8,0" Click="SaveButton_Click" IsDefault="True"/>
+            <Button x:Name="CancelButton" Content="キャンセル" Width="100" Height="34"
+                    Click="CancelButton_Click" IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Window>
