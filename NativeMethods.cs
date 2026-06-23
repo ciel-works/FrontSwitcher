@@ -19,6 +19,7 @@ internal static class NativeMethods
     public const int SW_MINIMIZE = 6;
     public const int SW_RESTORE = 9;
     public const int SW_SHOW = 5;
+    public const int SW_FORCEMINIMIZE = 11;
 
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();

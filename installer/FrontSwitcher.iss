@@ -6,7 +6,7 @@
 ; ============================================================
 
 #define AppName        "FrontSwitcher"
-#define AppVersion      "1.0.0"
+#define AppVersion      "1.1.0"
 #define AppPublisher    "（あなたの名前 / ハンドル名）"
 #define AppURL          "https://github.com/（ユーザー名）/FrontSwitcher"
 #define AppExeName      "FrontSwitcher.exe"

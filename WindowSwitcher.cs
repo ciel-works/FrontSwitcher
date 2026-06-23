@@ -134,8 +134,16 @@ public sealed class WindowSwitcher
     private static void MinimizeOne(IntPtr hWnd, AppSettings settings)
     {
         NativeMethods.ShowWindow(hWnd, NativeMethods.SW_MINIMIZE);
-        if (settings.HideFromTaskbar)
+        // 一部のアプリは通常の最小化を無視するため、強制最小化も試みる
+        if (!NativeMethods.IsIconic(hWnd))
+            NativeMethods.ShowWindow(hWnd, NativeMethods.SW_FORCEMINIMIZE);
+
+        // 実際に最小化できたときだけタスクバーボタンを消す
+        // （最小化に失敗したのにボタンだけ消える不整合を防ぐ）
+        if (settings.HideFromTaskbar && NativeMethods.IsIconic(hWnd))
             TaskbarButton.Hide(hWnd);
+        else if (settings.HideFromTaskbar)
+            Logger.Log($"最小化できなかったためタスクバー非表示をスキップ: hWnd={hWnd}");
     }
 
     /// <summary>退避ウインドウのうち、まだ最小化中のものがあるか（トグル判定用）</summary>

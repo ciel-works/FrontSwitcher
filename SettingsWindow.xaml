@@ -42,8 +42,9 @@
                                           ToolTip="ONにすると、最小化した作業中ウインドウをタスクバーから消します。&#x0a;Windows 11 では Alt+Tab からも消えるため、戻すときは『同じホットキーをもう一度押す』か、トレイメニューの『隠したウインドウを戻す』を使ってください（タスクバーのボタンも復活します）。"/>
                                 <TextBlock Text="※ Windows 11 では Alt+Tab からも消えます。戻すのはホットキー再押下、またはトレイの「隠したウインドウを戻す」。"
                                            Foreground="#888" FontSize="11.5" TextWrapping="Wrap" Margin="40,0,0,4"/>
-                                <CheckBox x:Name="StartupCheck" Content="Windows 起動時に自動で常駐する"
-                                          Margin="0,2"/>
+                                <CheckBox x:Name="StartupCheck" Content="Windows 起動時に自動で常駐する（管理者・UACなし）"
+                                          Margin="0,2"
+                                          ToolTip="ログオン時に、UAC（確認画面）を出さずに管理者権限で自動起動します。&#x0a;タスク スケジューラに「最上位の特権で実行」タスクを登録する方式です。"/>
                             </StackPanel>
                         </GroupBox>
                     </StackPanel>

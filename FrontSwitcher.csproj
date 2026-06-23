@@ -13,7 +13,7 @@
     <ApplicationIcon>checkmark.ico</ApplicationIcon>
     <AssemblyName>FrontSwitcher</AssemblyName>
     <RootNamespace>FrontSwitcher</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <!-- 単一ファイル発行を見据えた設定（任意） -->
     <SatelliteResourceLanguages>ja;en</SatelliteResourceLanguages>
   </PropertyGroup>
