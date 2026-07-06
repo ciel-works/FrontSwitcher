@@ -67,6 +67,16 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     public static extern int GetWindowTextLength(IntPtr hWnd);
 
+    // 昇格プロセスで Explorer からの "TaskbarCreated" ブロードキャストを受け取るための許可
+    public const uint MSGFLT_ADD = 1;
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    public static extern uint RegisterWindowMessage(string lpString);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool ChangeWindowMessageFilter(uint message, uint dwFlag);
+
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
     [DllImport("user32.dll")]

@@ -33,6 +33,11 @@ public partial class App : Application
         }
 
         Logger.Log("=== App startup ===");
+        // 昇格アプリでもトレイアイコンを確実に出すため、TaskbarCreated メッセージを受け取れるようにする
+        AllowTaskbarCreatedMessage();
+        // 旧方式(Runキー)の自動起動が残っていれば毎回掃除する（管理者アプリはRunキーから正常起動できないため）
+        StartupManager.CleanLegacyStartup();
+
         bool firstRun = !System.IO.File.Exists(AppSettings.SettingsPath);
         Settings = AppSettings.Load();
         _switcher = new WindowSwitcher();
@@ -47,6 +52,25 @@ public partial class App : Application
         {
             ShowBalloon("FrontSwitcher を常駐しました。トレイアイコンからホットキー等を設定できます。");
             OpenSettings();
+        }
+    }
+
+    /// <summary>
+    /// 昇格（管理者）プロセスでも、Explorer からの "TaskbarCreated" ブロードキャストを
+    /// 受け取れるようにする。これが無いと、Explorer より先に起動した場合などに
+    /// トレイアイコンが表示されないことがある。
+    /// </summary>
+    private void AllowTaskbarCreatedMessage()
+    {
+        try
+        {
+            uint msg = NativeMethods.RegisterWindowMessage("TaskbarCreated");
+            if (msg != 0)
+                NativeMethods.ChangeWindowMessageFilter(msg, NativeMethods.MSGFLT_ADD);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("ChangeWindowMessageFilter 失敗: " + ex.Message);
         }
     }
 

@@ -33,14 +33,18 @@ internal static class StartupManager
         return RunSchtasks($"/Query /TN \"{TaskName}\"") == 0;
     }
 
+    /// <summary>旧方式(Runキー)の自動起動登録を消す（起動のたびに呼ぶ）</summary>
+    public static void CleanLegacyStartup() => RemoveLegacyRunKey();
+
     private static void CreateTask()
     {
         string exe = Environment.ProcessPath ?? "";
         if (string.IsNullOrEmpty(exe))
             return;
 
-        // /SC ONLOGON＝ログオン時, /RL HIGHEST＝最上位の特権（昇格・UAC なし）, /F＝既存を上書き
-        string args = $"/Create /TN \"{TaskName}\" /TR \"\\\"{exe}\\\"\" /SC ONLOGON /RL HIGHEST /F";
+        // /SC ONLOGON＝ログオン時, /RL HIGHEST＝最上位の特権（昇格・UAC なし）,
+        // /DELAY＝Explorer 起動を待つための遅延（トレイ登録失敗を防ぐ）, /F＝既存を上書き
+        string args = $"/Create /TN \"{TaskName}\" /TR \"\\\"{exe}\\\"\" /SC ONLOGON /RL HIGHEST /DELAY 0000:15 /F";
         int code = RunSchtasks(args);
         if (code != 0)
             Logger.Log($"スタートアップ タスクの作成に失敗しました (exit={code})");
