@@ -1,4 +1,7 @@
 using System.Diagnostics;
+using System.IO;
+using System.Security;
+using System.Text;
 using Microsoft.Win32;
 
 namespace FrontSwitcher;
@@ -42,12 +45,62 @@ internal static class StartupManager
         if (string.IsNullOrEmpty(exe))
             return;
 
-        // /SC ONLOGON＝ログオン時, /RL HIGHEST＝最上位の特権（昇格・UAC なし）,
-        // /DELAY＝Explorer 起動を待つための遅延（トレイ登録失敗を防ぐ）, /F＝既存を上書き
-        string args = $"/Create /TN \"{TaskName}\" /TR \"\\\"{exe}\\\"\" /SC ONLOGON /RL HIGHEST /DELAY 0000:15 /F";
-        int code = RunSchtasks(args);
-        if (code != 0)
-            Logger.Log($"スタートアップ タスクの作成に失敗しました (exit={code})");
+        // schtasks のコマンドラインでは電源条件を指定できず、既定で
+        // 「バッテリー駆動になったらタスクを停止」「バッテリー中は開始しない」
+        // 「72時間で強制終了」が付いてしまう（ノートPCで常駐が突然消える原因）。
+        // そのため XML 定義で明示的に無効化して登録する。
+        string user = Environment.UserDomainName + "\\" + Environment.UserName;
+        string xml = $"""
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <Delay>PT15S</Delay>
+      <UserId>{SecurityElement.Escape(user)}</UserId>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>{SecurityElement.Escape(user)}</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <StartWhenAvailable>false</StartWhenAvailable>
+    <Enabled>true</Enabled>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>{SecurityElement.Escape("\"" + exe + "\"")}</Command>
+    </Exec>
+  </Actions>
+</Task>
+""";
+
+        string tmp = Path.Combine(Path.GetTempPath(), "FrontSwitcherTask.xml");
+        try
+        {
+            File.WriteAllText(tmp, xml, Encoding.Unicode);
+            int code = RunSchtasks($"/Create /TN \"{TaskName}\" /XML \"{tmp}\" /F");
+            if (code != 0)
+                Logger.Log($"スタートアップ タスクの作成に失敗しました (exit={code})");
+            else
+                Logger.Log("スタートアップ タスクを登録/更新しました（電源条件なし）");
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("スタートアップ タスク作成エラー: " + ex.Message);
+        }
+        finally
+        {
+            try { File.Delete(tmp); } catch { }
+        }
     }
 
     private static void DeleteTask()

@@ -40,6 +40,12 @@ public partial class App : Application
 
         bool firstRun = !System.IO.File.Exists(AppSettings.SettingsPath);
         Settings = AppSettings.Load();
+
+        // 自動起動が有効なら、タスク定義を最新の内容で登録し直す（自己修復）。
+        // 旧版の登録には「バッテリー駆動でタスク停止」等の条件が残っているため、起動のたびに上書きする。
+        if (Settings.StartWithWindows)
+            StartupManager.Apply(true);
+
         _switcher = new WindowSwitcher();
 
         WindowSwitcher.TrayBalloonRequested += ShowBalloon;
