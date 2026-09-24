@@ -6,6 +6,7 @@ using System.Windows.Input;
 // WinForms/WPF 双方に同名型があるため WPF 側に固定する
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using MessageBox = System.Windows.MessageBox;
+using ComboBoxItem = System.Windows.Controls.ComboBoxItem;
 
 namespace FrontSwitcher;
 
@@ -39,6 +40,111 @@ public partial class SettingsWindow : Window
             CloseTabListBox.Items.Add(p);
         UpdateTargetPanelEnabled();
         UpdateMinimizeSubOptions();
+
+        // マウスジェスチャ
+        GestureEnableCheck.IsChecked = settings.MouseGestureEnabled;
+        foreach (var g in settings.MouseGestures)
+            GestureListBox.Items.Add(g.Clone());
+        foreach (GestureAction a in Enum.GetValues<GestureAction>())
+            GestureActionCombo.Items.Add(new ComboBoxItem { Content = GestureBinding.ActionToText(a), Tag = a });
+        GestureActionCombo.SelectedIndex = 0;
+        GestureStartBox.Text = settings.GestureStartDistance.ToString();
+        GestureStrokeBox.Text = settings.GestureStrokeDistance.ToString();
+        foreach (var n in settings.GestureExcludeProcesses)
+            GestureExcludeListBox.Items.Add(n);
+        UpdateGesturePatternText();
+    }
+
+    // --- マウスジェスチャ ---
+    private string _pendingPattern = "";
+
+    private void GestureDirButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Button { Tag: string dir }) return;
+        // 同じ向きが続くのは1ストロークなので追加しない
+        if (_pendingPattern.Length > 0 && _pendingPattern[^1] == dir[0]) return;
+        if (_pendingPattern.Length >= GestureBinding.MaxStrokes) return;
+        _pendingPattern += dir;
+        UpdateGesturePatternText();
+    }
+
+    private void GestureClearButton_Click(object sender, RoutedEventArgs e)
+    {
+        _pendingPattern = "";
+        UpdateGesturePatternText();
+    }
+
+    private void UpdateGesturePatternText()
+    {
+        bool empty = _pendingPattern.Length == 0;
+        GesturePatternText.Text = empty ? "(未入力)" : GestureBinding.PatternToArrows(_pendingPattern);
+        GesturePatternText.Foreground = empty ? System.Windows.Media.Brushes.Gray : System.Windows.Media.Brushes.Black;
+    }
+
+    private void AddGestureButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!GestureBinding.IsValidPattern(_pendingPattern))
+        {
+            MessageBox.Show(this, "向きのボタン（↑↓←→）でジェスチャを入力してください。",
+                "FrontSwitcher", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        if (GestureActionCombo.SelectedItem is not ComboBoxItem { Tag: GestureAction action }) return;
+
+        uint mods = 0;
+        if (GestureCtrlCheck.IsChecked == true) mods |= HotKeyService.MOD_CONTROL;
+        if (GestureShiftCheck.IsChecked == true) mods |= HotKeyService.MOD_SHIFT;
+        if (GestureAltCheck.IsChecked == true) mods |= HotKeyService.MOD_ALT;
+        if (GestureWinCheck.IsChecked == true) mods |= HotKeyService.MOD_WIN;
+
+        var dup = GestureListBox.Items.Cast<GestureBinding>()
+            .FirstOrDefault(g => g.Modifiers == mods && g.Pattern == _pendingPattern);
+        if (dup is not null)
+        {
+            MessageBox.Show(this, $"同じキーと向きのジェスチャが既にあります:\n{dup}",
+                "FrontSwitcher", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        if (GestureListBox.Items.Count >= AppSettings.MaxGestures)
+        {
+            MessageBox.Show(this, $"登録できるのは最大 {AppSettings.MaxGestures} 件までです。",
+                "FrontSwitcher", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        GestureListBox.Items.Add(new GestureBinding(mods, _pendingPattern, action));
+        _pendingPattern = "";
+        UpdateGesturePatternText();
+    }
+
+    private void RemoveGestureButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (GestureListBox.SelectedItem is not null)
+            GestureListBox.Items.Remove(GestureListBox.SelectedItem);
+    }
+
+    private void AddExcludeButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (TryAddProcess(GestureExcludeListBox, AppSettings.MaxGestureExclude, AddExcludeBox.Text))
+            AddExcludeBox.Clear();
+    }
+
+    private async void CaptureExcludeButton_Click(object sender, RoutedEventArgs e) =>
+        await CaptureProcessIntoAsync(CaptureExcludeButton, GestureExcludeListBox, AppSettings.MaxGestureExclude);
+
+    private void RemoveExcludeButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (GestureExcludeListBox.SelectedItem is not null)
+            GestureExcludeListBox.Items.Remove(GestureExcludeListBox.SelectedItem);
+    }
+
+    /// <summary>距離の入力欄を検証する。範囲外なら null。</summary>
+    private static int? ParseDistance(string text)
+    {
+        if (int.TryParse(text.Trim(), out int v)
+            && v >= AppSettings.MinGestureDistance && v <= AppSettings.MaxGestureDistance)
+            return v;
+        return null;
     }
 
     // 「最小化する」OFF のときは連動オプション（タスクバーから隠す）を無効化
@@ -62,18 +168,23 @@ public partial class SettingsWindow : Window
     // --- 一緒に最小化するアプリ ---
     private void AddProcessButton_Click(object sender, RoutedEventArgs e)
     {
-        if (TryAddProcess(AddProcessBox.Text))
+        if (TryAddProcess(MinimizeListBox, AppSettings.MaxMinimizeWith, AddProcessBox.Text))
             AddProcessBox.Clear();
     }
 
-    private async void CaptureAddButton_Click(object sender, RoutedEventArgs e)
+    private async void CaptureAddButton_Click(object sender, RoutedEventArgs e) =>
+        await CaptureProcessIntoAsync(CaptureAddButton, MinimizeListBox, AppSettings.MaxMinimizeWith);
+
+    /// <summary>数秒待ってから前面ウインドウのプロセス名を取り、リストへ追加する</summary>
+    private async Task CaptureProcessIntoAsync(System.Windows.Controls.Button button, System.Windows.Controls.ListBox list, int max)
     {
-        CaptureAddButton.IsEnabled = false;
+        object original = button.Content;
+        button.IsEnabled = false;
         try
         {
             for (int sec = 3; sec >= 1; sec--)
             {
-                CaptureAddButton.Content = $"{sec} 秒後...";
+                button.Content = $"{sec} 秒後...";
                 await Task.Delay(1000);
             }
 
@@ -82,7 +193,7 @@ public partial class SettingsWindow : Window
             try
             {
                 var proc = Process.GetProcessById((int)pid);
-                TryAddProcess(proc.ProcessName);
+                TryAddProcess(list, max, proc.ProcessName);
             }
             catch
             {
@@ -92,8 +203,8 @@ public partial class SettingsWindow : Window
         }
         finally
         {
-            CaptureAddButton.Content = "前面から取得";
-            CaptureAddButton.IsEnabled = true;
+            button.Content = original;
+            button.IsEnabled = true;
         }
     }
 
@@ -150,7 +261,7 @@ public partial class SettingsWindow : Window
     }
 
     /// <summary>プロセス名を正規化してリストへ追加。重複・空・上限を弾く。成功で true。</summary>
-    private bool TryAddProcess(string raw)
+    private bool TryAddProcess(System.Windows.Controls.ListBox list, int max, string raw)
     {
         string name = (raw ?? "").Trim();
         if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
@@ -159,20 +270,20 @@ public partial class SettingsWindow : Window
             return false;
 
         // 重複（大文字小文字を無視）
-        foreach (string item in MinimizeListBox.Items)
+        foreach (string item in list.Items)
         {
             if (string.Equals(item, name, StringComparison.OrdinalIgnoreCase))
                 return false;
         }
 
-        if (MinimizeListBox.Items.Count >= AppSettings.MaxMinimizeWith)
+        if (list.Items.Count >= max)
         {
-            MessageBox.Show(this, $"登録できるのは最大 {AppSettings.MaxMinimizeWith} 件までです。",
+            MessageBox.Show(this, $"登録できるのは最大 {max} 件までです。",
                 "FrontSwitcher", MessageBoxButton.OK, MessageBoxImage.Information);
             return false;
         }
 
-        MinimizeListBox.Items.Add(name);
+        list.Items.Add(name);
         return true;
     }
 
@@ -308,6 +419,29 @@ public partial class SettingsWindow : Window
                 "FrontSwitcher", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
+
+        int? startDist = ParseDistance(GestureStartBox.Text);
+        int? strokeDist = ParseDistance(GestureStrokeBox.Text);
+        if (startDist is null || strokeDist is null)
+        {
+            MessageBox.Show(this,
+                $"マウスジェスチャの判定距離は {AppSettings.MinGestureDistance}〜{AppSettings.MaxGestureDistance} の整数で入力してください。",
+                "FrontSwitcher", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        bool gestureOn = GestureEnableCheck.IsChecked == true;
+        if (gestureOn && GestureListBox.Items.Count == 0)
+        {
+            MessageBox.Show(this, "「マウスジェスチャを使う」が ON です。ジェスチャを1件以上登録してください。",
+                "FrontSwitcher", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        _settings.MouseGestureEnabled = gestureOn;
+        _settings.MouseGestures = GestureListBox.Items.Cast<GestureBinding>().Select(g => g.Clone()).ToList();
+        _settings.GestureStartDistance = startDist.Value;
+        _settings.GestureStrokeDistance = strokeDist.Value;
+        _settings.GestureExcludeProcesses = GestureExcludeListBox.Items.Cast<string>().ToList();
 
         _settings.Modifiers = _pendingModifiers;
         _settings.VirtualKey = _pendingVk;

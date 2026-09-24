@@ -31,17 +31,44 @@ public sealed class WindowSwitcher
         await SwitchBringToFrontAsync(settings);
     }
 
-    /// <summary>最小化のみモード。押すたびに「最小化」⇔「復元」をトグルする。</summary>
+    /// <summary>
+    /// 最小化のみモード。判定規則は一つ：
+    /// 「隠すべきものが画面に見えているなら隠す。何も見えていなければ、隠したものを全部戻す」。
+    /// ・隠すべきもの＝登録アプリの表示中ウインドウ、または手動復元された退避済みウインドウ
+    /// ・登録アプリはウインドウを開き直すと識別子が変わるため、リスト照合でなく
+    ///   「登録プロセスの表示中ウインドウが存在するか」で判定する
+    /// </summary>
     private async Task SwitchMinimizeOnlyAsync(AppSettings settings)
     {
-        // 直前に自分が最小化したウインドウがまだ最小化中なら、まとめて復元（トグル）
+        IntPtr foreground = NativeMethods.GetForegroundWindow();
+
+        // 登録アプリの「表示中（最小化されていない）」ウインドウ
+        var visibleTargets = FindVisibleRegisteredWindows(settings);
+
+        // 退避済みのウインドウをユーザーが手動で復元して前面で使っているか
+        bool fgIsRestoredStash = foreground != IntPtr.Zero
+            && _stashed.Contains(foreground)
+            && !NativeMethods.IsIconic(foreground);
+
+        if (visibleTargets.Count > 0 || fgIsRestoredStash)
+        {
+            // 隠すべきものが見えている → 最小化（既存の退避記憶は消さず追記する）
+            Logger.Log($"  -> 最小化パス (登録アプリ表示中={visibleTargets.Count} 前面が退避済み={fgIsRestoredStash})");
+            Minimize(settings, IntPtr.Zero, visibleTargets);
+            await CloseTabsAsync(settings);
+            return;
+        }
+
         if (IsStashActive())
         {
+            // 隠すべきものは無く、隠したものが残っている → まとめて復元
+            Logger.Log("  -> 復元(トグル)");
             RestoreStashedWindow();
             return;
         }
 
-        Minimize(settings, IntPtr.Zero);
+        // 何も隠しておらず登録アプリも見えていない → 前面ウインドウを新規に最小化
+        Minimize(settings, IntPtr.Zero, visibleTargets);
         await CloseTabsAsync(settings);
     }
 
@@ -78,6 +105,64 @@ public sealed class WindowSwitcher
         await CloseTabsAsync(settings);
     }
 
+    // ===== マウスジェスチャから単独で呼ぶ動作 =====
+
+    /// <summary>トグルの「隠す」側だけを必ず実行する（前面ウインドウ＋登録アプリを最小化、タブも閉じる）。</summary>
+    public async Task HideAsync(AppSettings settings)
+    {
+        Logger.Log("  -> 隠す（ジェスチャ）");
+        Minimize(settings, IntPtr.Zero);
+        await CloseTabsAsync(settings);
+    }
+
+    /// <summary>対象アプリを前面に出す（未起動なら起動）。他のウインドウは最小化しない。</summary>
+    public async Task BringTargetAsync(AppSettings settings)
+    {
+        IntPtr target = FindTargetWindow(settings);
+        if (target == IntPtr.Zero)
+        {
+            if (string.IsNullOrWhiteSpace(ResolveProcessName(settings)))
+            {
+                ShowTrayBalloon("対象アプリが設定されていません。設定の「最前面化」タブで指定してください。");
+                return;
+            }
+            target = await LaunchAndWaitAsync(settings);
+            if (target == IntPtr.Zero)
+            {
+                ShowTrayBalloon("対象アプリのウインドウを見つけられませんでした。設定を確認してください。");
+                return;
+            }
+        }
+        BringToFront(target);
+    }
+
+    /// <summary>
+    /// 一般的な窓操作（最小化・最大化・閉じる）。ユーザーがタイトルバーのボタンを押したのと同じ
+    /// WM_SYSCOMMAND を送る（アプリ側の保存確認などはそのまま働く）。
+    /// デスクトップやタスクバーは対象外（閉じるとシャットダウン画面が出るため）。
+    /// </summary>
+    public static void WindowCommand(IntPtr hWnd, GestureAction action)
+    {
+        if (hWnd == IntPtr.Zero || !NativeMethods.IsWindow(hWnd)) return;
+        string cls = NativeMethods.GetClassNameOf(hWnd);
+        if (cls is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd")
+        {
+            Logger.Log($"  窓操作スキップ（シェルのウインドウ: {cls}）");
+            return;
+        }
+
+        int cmd = action switch
+        {
+            GestureAction.MinimizeWindow => NativeMethods.SC_MINIMIZE,
+            GestureAction.ToggleMaximizeWindow => NativeMethods.IsZoomed(hWnd) ? NativeMethods.SC_RESTORE : NativeMethods.SC_MAXIMIZE,
+            GestureAction.CloseWindow => NativeMethods.SC_CLOSE,
+            _ => 0,
+        };
+        if (cmd == 0) return;
+        NativeMethods.PostMessage(hWnd, NativeMethods.WM_SYSCOMMAND, new IntPtr(cmd), IntPtr.Zero);
+        Logger.Log($"  窓操作 {action} hWnd={hWnd} class={cls}");
+    }
+
     /// <summary>設定された正規表現にマッチするブラウザタブを閉じる（Chrome/Edge）。</summary>
     private async Task CloseTabsAsync(AppSettings settings)
     {
@@ -98,37 +183,63 @@ public sealed class WindowSwitcher
 
     /// <summary>
     /// 前面ウインドウと「一緒に最小化するアプリ」を最小化して退避する。
+    /// 既存の退避記憶は消さず追記する（連続で隠しても、復元で全部戻せるように）。
     /// excludeTarget は最小化対象から除外する（最前面化モードの対象アプリ自身）。
+    /// visibleTargets を渡すと登録アプリの再列挙を省略する。
     /// </summary>
-    private void Minimize(AppSettings settings, IntPtr excludeTarget)
+    private void Minimize(AppSettings settings, IntPtr excludeTarget, List<IntPtr>? visibleTargets = null)
     {
-        _stashed.Clear();
-        _stashedPrimary = IntPtr.Zero;
+        // 閉じられた等で無効になったハンドルだけ掃除する（記憶自体は保持）
+        _stashed.RemoveAll(h => !NativeMethods.IsWindow(h));
+        if (_stashedPrimary != IntPtr.Zero && !NativeMethods.IsWindow(_stashedPrimary))
+            _stashedPrimary = IntPtr.Zero;
 
         // 元の前面ウインドウ
         IntPtr foreground = NativeMethods.GetForegroundWindow();
+        Logger.Log($"  Minimize: fg={foreground} isWin={NativeMethods.IsWindow(foreground)} minCur={settings.MinimizeCurrent} with=[{string.Join(",", settings.MinimizeWithProcesses)}]");
         if (settings.MinimizeCurrent
             && foreground != IntPtr.Zero
             && foreground != excludeTarget
-            && NativeMethods.IsWindow(foreground))
+            && NativeMethods.IsWindow(foreground)
+            && !NativeMethods.IsIconic(foreground))
         {
             MinimizeOne(foreground, settings);
             _stashedPrimary = foreground;
-            _stashed.Add(foreground);
+            if (!_stashed.Contains(foreground))
+                _stashed.Add(foreground);
         }
 
-        // 一緒に最小化する登録アプリ（開いているウインドウだけ対象）
+        // 一緒に最小化する登録アプリ（表示中のウインドウだけ対象）
+        visibleTargets ??= FindVisibleRegisteredWindows(settings);
+        int added = 0;
+        foreach (IntPtr hwnd in visibleTargets)
+        {
+            if (hwnd == excludeTarget) continue;
+            if (NativeMethods.IsIconic(hwnd)) continue; // 念のため（表示中リストのはず）
+            MinimizeOne(hwnd, settings);
+            if (!_stashed.Contains(hwnd))
+            {
+                _stashed.Add(hwnd);
+                added++;
+            }
+        }
+
+        Logger.Log($"  -> 最小化実行 (退避合計={_stashed.Count}窓, 今回登録アプリ={added}窓, 前面含む={_stashedPrimary != IntPtr.Zero})");
+    }
+
+    /// <summary>登録アプリの「表示中（最小化されていない）」トップレベルウインドウを列挙する</summary>
+    private List<IntPtr> FindVisibleRegisteredWindows(AppSettings settings)
+    {
+        var result = new List<IntPtr>();
         foreach (string name in settings.MinimizeWithProcesses)
         {
             foreach (IntPtr hwnd in FindWindowsOfProcess(name))
             {
-                if (hwnd == excludeTarget) continue;
-                if (_stashed.Contains(hwnd)) continue;
-                if (NativeMethods.IsIconic(hwnd)) continue; // 既に最小化済みは触らない
-                MinimizeOne(hwnd, settings);
-                _stashed.Add(hwnd);
+                if (!NativeMethods.IsIconic(hwnd))
+                    result.Add(hwnd);
             }
         }
+        return result;
     }
 
     private static void MinimizeOne(IntPtr hWnd, AppSettings settings)
@@ -174,6 +285,7 @@ public sealed class WindowSwitcher
     public bool RestoreStashedWindow()
     {
         bool restored = false;
+        IntPtr lastRestored = IntPtr.Zero;
 
         // 元前面以外（一緒に最小化した登録アプリ）を先に復元
         foreach (IntPtr h in _stashed)
@@ -183,17 +295,26 @@ public sealed class WindowSwitcher
             {
                 TaskbarButton.Show(h);
                 if (NativeMethods.IsIconic(h))
+                {
                     NativeMethods.ShowWindow(h, NativeMethods.SW_RESTORE);
+                    lastRestored = h;
+                }
                 restored = true;
             }
         }
 
-        // 最後に元の前面ウインドウを最前面へ
+        // 最後に元の前面ウインドウを最前面へ。
+        // 前面の記憶が無い場合（アクティブ最小化OFFの構成）は、復元した登録アプリを
+        // 前面に出す（これが無いと、戻ったのに背後に隠れて「戻らない」ように見える）。
         if (_stashedPrimary != IntPtr.Zero && NativeMethods.IsWindow(_stashedPrimary))
         {
             TaskbarButton.Show(_stashedPrimary);
             BringToFront(_stashedPrimary);
             restored = true;
+        }
+        else if (lastRestored != IntPtr.Zero)
+        {
+            BringToFront(lastRestored);
         }
 
         _stashed.Clear();

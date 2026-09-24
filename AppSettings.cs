@@ -54,6 +54,32 @@ public sealed class AppSettings
     /// <summary>登録可能な「閉じるタブの正規表現」の上限</summary>
     public const int MaxCloseTabPatterns = 20;
 
+    // --- マウスジェスチャ ---
+    /// <summary>マウスジェスチャ（右ドラッグ）を使うか。既定 OFF。</summary>
+    public bool MouseGestureEnabled { get; set; } = false;
+
+    /// <summary>ジェスチャの割り当て一覧。最大 10 件。</summary>
+    public List<GestureBinding> MouseGestures { get; set; } = GestureBinding.Defaults();
+
+    /// <summary>登録可能なジェスチャの上限</summary>
+    public const int MaxGestures = 10;
+
+    /// <summary>右ボタンを押した地点から何px動いたらジェスチャ開始とするか（物理ピクセル）</summary>
+    public int GestureStartDistance { get; set; } = 20;
+
+    /// <summary>別方向へ何px動いたら次のストロークとして数えるか（物理ピクセル）</summary>
+    public int GestureStrokeDistance { get; set; } = 30;
+
+    /// <summary>距離設定の下限・上限</summary>
+    public const int MinGestureDistance = 5;
+    public const int MaxGestureDistance = 300;
+
+    /// <summary>ジェスチャを無効にするアプリのプロセス名（拡張子なし）。最大 20 件。</summary>
+    public List<string> GestureExcludeProcesses { get; set; } = new();
+
+    /// <summary>登録可能な除外アプリの上限</summary>
+    public const int MaxGestureExclude = 20;
+
     /// <summary>Windows 起動時に自動起動するか（HKCU Run キー）</summary>
     public bool StartWithWindows { get; set; } = false;
 
@@ -81,7 +107,10 @@ public sealed class AppSettings
                 var json = File.ReadAllText(SettingsPath);
                 var loaded = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions);
                 if (loaded is not null)
+                {
+                    loaded.Normalize();
                     return loaded;
+                }
             }
         }
         catch
@@ -89,6 +118,18 @@ public sealed class AppSettings
             // 壊れた設定ファイルは無視して既定値で続行する
         }
         return new AppSettings();
+    }
+
+    /// <summary>手書き等で壊れた値を補正する（null のリスト、範囲外の距離、不正な並び）</summary>
+    private void Normalize()
+    {
+        MinimizeWithProcesses ??= new();
+        CloseTabPatterns ??= new();
+        GestureExcludeProcesses ??= new();
+        MouseGestures ??= new();
+        MouseGestures.RemoveAll(g => g is null || !GestureBinding.IsValidPattern(g.Pattern));
+        GestureStartDistance = Math.Clamp(GestureStartDistance, MinGestureDistance, MaxGestureDistance);
+        GestureStrokeDistance = Math.Clamp(GestureStrokeDistance, MinGestureDistance, MaxGestureDistance);
     }
 
     public void Save()
@@ -104,6 +145,8 @@ public sealed class AppSettings
         var copy = (AppSettings)MemberwiseClone();
         copy.MinimizeWithProcesses = new List<string>(MinimizeWithProcesses);
         copy.CloseTabPatterns = new List<string>(CloseTabPatterns);
+        copy.MouseGestures = MouseGestures.Select(g => g.Clone()).ToList();
+        copy.GestureExcludeProcesses = new List<string>(GestureExcludeProcesses);
         return copy;
     }
 }

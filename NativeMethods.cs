@@ -67,6 +67,30 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     public static extern int GetWindowTextLength(IntPtr hWnd);
 
+    // ウインドウ操作（タイトルバーのボタンと同じ）
+    public const int WM_SYSCOMMAND = 0x0112;
+    public const int SC_MINIMIZE = 0xF020;
+    public const int SC_MAXIMIZE = 0xF030;
+    public const int SC_CLOSE = 0xF060;
+    public const int SC_RESTORE = 0xF120;
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool IsZoomed(IntPtr hWnd);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+    public static string GetClassNameOf(IntPtr hWnd)
+    {
+        var sb = new StringBuilder(256);
+        return GetClassName(hWnd, sb, sb.Capacity) > 0 ? sb.ToString() : "";
+    }
+
     // 昇格プロセスで Explorer からの "TaskbarCreated" ブロードキャストを受け取るための許可
     public const uint MSGFLT_ADD = 1;
 

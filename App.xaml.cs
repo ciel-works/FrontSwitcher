@@ -11,6 +11,8 @@ public partial class App : Application
     private WinForms.NotifyIcon? _trayIcon;
     private System.Drawing.Icon? _trayIconImage;
     private HotKeyService? _hotKeys;
+    private MouseGestureService? _gestures;
+    private WinForms.ToolStripMenuItem? _pauseGestureItem;
     private WindowSwitcher? _switcher;
     private SettingsWindow? _settingsWindow;
     private Mutex? _singleInstanceMutex;
@@ -52,6 +54,7 @@ public partial class App : Application
 
         InitTrayIcon();
         InitHotKeys();
+        InitGestures();
 
         // 初回起動時はガイドとして設定画面を開く（ホットキー設定のため）
         if (firstRun)
@@ -94,6 +97,13 @@ public partial class App : Application
         menu.Items.Add("設定...", null, (_, _) => OpenSettings());
         menu.Items.Add("今すぐ切替（テスト）", null, async (_, _) => await DoSwitchAsync());
         menu.Items.Add("隠したウインドウを戻す", null, (_, _) => RestoreHidden());
+        _pauseGestureItem = new WinForms.ToolStripMenuItem("マウスジェスチャ一時停止") { CheckOnClick = true };
+        _pauseGestureItem.CheckedChanged += (_, _) =>
+        {
+            if (_gestures is not null) _gestures.Paused = _pauseGestureItem.Checked;
+            Logger.Log($"MouseGesture: 一時停止={_pauseGestureItem.Checked}");
+        };
+        menu.Items.Add(_pauseGestureItem);
         menu.Items.Add(new WinForms.ToolStripSeparator());
         menu.Items.Add("終了", null, (_, _) => ExitApp());
         _trayIcon.ContextMenuStrip = menu;
@@ -106,6 +116,56 @@ public partial class App : Application
         _hotKeys = new HotKeyService();
         _hotKeys.HotKeyPressed += async () => await DoSwitchAsync();
         RegisterCurrentHotKey();
+    }
+
+    private void InitGestures()
+    {
+        _gestures = new MouseGestureService();
+        // フックスレッドから呼ばれるので UI スレッドへ回す
+        _gestures.GestureRecognized += (binding, target) =>
+            Dispatcher.BeginInvoke(new Action(async () => await DoGestureAsync(binding.Action, target)));
+        ApplyGestures();
+    }
+
+    /// <summary>現在の設定でマウスジェスチャを開始／停止する</summary>
+    private void ApplyGestures()
+    {
+        if (_gestures is null) return;
+        _gestures.Apply(Settings);
+        if (_pauseGestureItem is not null)
+            _pauseGestureItem.Enabled = Settings.MouseGestureEnabled;
+    }
+
+    private async Task DoGestureAsync(GestureAction action, IntPtr target)
+    {
+        if (_switcher is null) return;
+        try
+        {
+            switch (action)
+            {
+                case GestureAction.Hide:
+                    await _switcher.HideAsync(Settings);
+                    break;
+                case GestureAction.Restore:
+                    _switcher.RestoreStashedWindow();
+                    break;
+                case GestureAction.Switch:
+                    await _switcher.SwitchAsync(Settings);
+                    break;
+                case GestureAction.BringTarget:
+                    await _switcher.BringTargetAsync(Settings);
+                    break;
+                case GestureAction.MinimizeWindow:
+                case GestureAction.ToggleMaximizeWindow:
+                case GestureAction.CloseWindow:
+                    WindowSwitcher.WindowCommand(target, action);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowBalloon($"ジェスチャの実行中にエラーが発生しました: {ex.Message}");
+        }
     }
 
     /// <summary>現在の設定でホットキーを登録。失敗したら通知する。</summary>
@@ -163,6 +223,7 @@ public partial class App : Application
         Settings.Save();
         StartupManager.Apply(Settings.StartWithWindows);
         RegisterCurrentHotKey();
+        ApplyGestures();
         ShowBalloon("設定を保存しました。");
     }
 
@@ -179,6 +240,7 @@ public partial class App : Application
     private void Application_Exit(object sender, ExitEventArgs e)
     {
         _hotKeys?.Dispose();
+        _gestures?.Dispose();
         if (_trayIcon is not null)
         {
             _trayIcon.Visible = false;
